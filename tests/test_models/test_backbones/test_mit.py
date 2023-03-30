@@ -3,7 +3,8 @@ import pytest
 import torch
 
 from mmseg.models.backbones import MixVisionTransformer
-from mmseg.models.backbones.mit import EfficientMultiheadAttention, MixFFN
+from mmseg.models.backbones.mit import (EfficientMultiheadAttention, MixFFN,
+                                        TransformerEncoderLayer)
 
 
 def test_mit():
@@ -55,3 +56,67 @@ def test_mit():
     # Out identity
     outs = MHA(temp, hw_shape, temp)
     assert out.shape == (1, token_len, 64)
+
+    # Test TransformerEncoderLayer with checkpoint forward
+    block = TransformerEncoderLayer(
+        embed_dims=64, num_heads=4, feedforward_channels=256, with_cp=True)
+    assert block.with_cp
+    x = torch.randn(1, 56 * 56, 64)
+    x_out = block(x, (56, 56))
+    assert x_out.shape == torch.Size([1, 56 * 56, 64])
+
+
+def test_mit_init():
+    path = 'PATH_THAT_DO_NOT_EXIST'
+    # Test all combinations of pretrained and init_cfg
+    # pretrained=None, init_cfg=None
+    model = MixVisionTransformer(pretrained=None, init_cfg=None)
+    assert model.init_cfg is None
+    model.init_weights()
+
+    # pretrained=None
+    # init_cfg loads pretrain from an non-existent file
+    model = MixVisionTransformer(
+        pretrained=None, init_cfg=dict(type='Pretrained', checkpoint=path))
+    assert model.init_cfg == dict(type='Pretrained', checkpoint=path)
+    # Test loading a checkpoint from an non-existent file
+    with pytest.raises(OSError):
+        model.init_weights()
+
+    # pretrained=None
+    # init_cfg=123, whose type is unsupported
+    model = MixVisionTransformer(pretrained=None, init_cfg=123)
+    with pytest.raises(TypeError):
+        model.init_weights()
+
+    # pretrained loads pretrain from an non-existent file
+    # init_cfg=None
+    model = MixVisionTransformer(pretrained=path, init_cfg=None)
+    assert model.init_cfg == dict(type='Pretrained', checkpoint=path)
+    # Test loading a checkpoint from an non-existent file
+    with pytest.raises(OSError):
+        model.init_weights()
+
+    # pretrained loads pretrain from an non-existent file
+    # init_cfg loads pretrain from an non-existent file
+    with pytest.raises(AssertionError):
+        MixVisionTransformer(
+            pretrained=path, init_cfg=dict(type='Pretrained', checkpoint=path))
+    with pytest.raises(AssertionError):
+        MixVisionTransformer(pretrained=path, init_cfg=123)
+
+    # pretrain=123, whose type is unsupported
+    # init_cfg=None
+    with pytest.raises(TypeError):
+        MixVisionTransformer(pretrained=123, init_cfg=None)
+
+    # pretrain=123, whose type is unsupported
+    # init_cfg loads pretrain from an non-existent file
+    with pytest.raises(AssertionError):
+        MixVisionTransformer(
+            pretrained=123, init_cfg=dict(type='Pretrained', checkpoint=path))
+
+    # pretrain=123, whose type is unsupported
+    # init_cfg=123, whose type is unsupported
+    with pytest.raises(AssertionError):
+        MixVisionTransformer(pretrained=123, init_cfg=123)
